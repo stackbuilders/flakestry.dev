@@ -1,12 +1,10 @@
 use std::{collections::HashMap, env, sync::Arc};
 
 use axum::{
-    extract::{Query, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
+    body::Body, extract::{Query, State}, http::{Request, Response, StatusCode}, response::IntoResponse, routing::{get, post}, Json, Router
 };
+use tracing::{Span, Level, field};
+use core::time::Duration;
 use opensearch::{indices::IndicesCreateParts, OpenSearch, SearchParts};
 use serde_json::{json, Value};
 use sqlx::postgres::{PgPool, PgPoolOptions};
@@ -56,7 +54,7 @@ struct GetFlakeResponse {
 #[derive(serde::Serialize, sqlx::FromRow)]
 struct FlakeRelease {
     #[serde(skip_serializing)]
-    id: i64,
+    id: i32,
     owner: String,
     repo: String,
     version: String,
@@ -98,7 +96,17 @@ fn app(state: Arc<AppState>) -> Router {
         .route("/publish", post(post_publish));
     Router::new()
         .nest("/api", api)
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(|_request: &Request<Body>| {
+            let span = tracing::span!(Level::INFO, "request", method = field::Empty, uri = field::Empty, version = field::Empty);
+            span
+        }).on_response(|response: &Response<Body>, latency: Duration, _span: &Span| {
+            tracing::info!("response: {} latency: {:?}", response.status(), latency);
+        }).on_request(|request: &Request<Body>, span: &Span| {
+            span
+                .record("version", format!("{:?}", request.version()))
+                .record("uri", format!("{}", request.uri()))
+                .record("method", format!("{}", request.method()));
+        }))
         .with_state(state)
 }
 
@@ -132,31 +140,31 @@ async fn get_flake(
             .json::<Value>()
             .await?;
         // TODO: Remove this unwrap, use fold or map to create the HashMap
-        let mut hits: HashMap<i64, i64> = HashMap::new();
+        let mut hits: HashMap<i64, f64> = HashMap::new();
         for hit in response["hits"]["hits"].as_array().unwrap() {
             // TODO: properly handle errors
             hits.insert(
-                hit["_id"].as_i64().unwrap(),
-                hit["_score"].as_i64().unwrap(),
+                hit["_id"].as_str().unwrap().parse().unwrap(),
+                hit["_score"].as_f64().unwrap(),
             );
         }
         // TODO: This query is actually a join between different tables
-        let mut releases = sqlx::query_as::<_, FlakeRelease>(
+        let releases = sqlx::query_as::<_, FlakeRelease>(
             "SELECT release.id AS id, \
                 githubowner.name AS owner, \
                 githubrepo.name AS repo, \
                 release.version AS version, \
                 release.description AS description, \
-                release.created_at AS created_at \
+                CAST(release.created_at AS VARCHAR) AS created_at \
                 FROM release \
                 INNER JOIN githubrepo ON githubrepo.id = release.repo_id \
                 INNER JOIN githubowner ON githubowner.id = githubrepo.owner_id \
-                WHERE release.id IN ($1)",
+                WHERE release.id IN (1)",
         )
-        .bind(hits.keys().cloned().collect::<Vec<i64>>())
+        // .bind(hits.keys().cloned().collect::<Vec<i64>>())
         .fetch_all(&state.pool)
         .await?;
-        releases.sort_by(|a, b| hits[&b.id].cmp(&hits[&a.id]));
+        // releases.sort_by(|a, b| hits[&b.id].cmp(&hits[&a.id]));
         releases
     } else {
         sqlx::query_as::<_, FlakeRelease>(
@@ -165,7 +173,7 @@ async fn get_flake(
                 githubrepo.name AS repo, \
                 release.version AS version, \
                 release.description AS description, \
-                release.created_at AS created_at \
+                CAST(release.created_at AS VARCHAR) AS created_at \
                 FROM release \
                 INNER JOIN githubrepo ON githubrepo.id = release.repo_id \
                 INNER JOIN githubowner ON githubowner.id = githubrepo.owner_id \
