@@ -1,14 +1,20 @@
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    body::Body, extract::{Query, State}, http::{Request, Response, StatusCode}, response::IntoResponse, routing::{get, post}, Json, Router
+    body::Body,
+    extract::{ConnectInfo, Query, Request, State},
+    http::{Response, StatusCode},
+    middleware::{self, Next},
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
 };
-use tracing::{Span, Level, field};
 use core::time::Duration;
 use opensearch::{indices::IndicesCreateParts, OpenSearch, SearchParts};
 use serde_json::{json, Value};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use tower_http::trace::TraceLayer;
+use tracing::{field, info_span, Span};
 use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -69,7 +75,7 @@ async fn main() {
     // build our application with a single route
     dotenv::dotenv().ok();
     tracing_subscriber::registry()
-        .with(fmt::layer())
+        .with(fmt::layer().with_target(false))
         .with(EnvFilter::from_default_env())
         .init();
     let database_url = env::var("DATABASE_URL").unwrap();
@@ -87,7 +93,23 @@ async fn main() {
         .await;
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app(state)).await.unwrap();
+    tracing::info!("Listening on 0.0.0.0:3000");
+    axum::serve(
+        listener,
+        app(state).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
+}
+
+async fn add_ip_trace(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: Request,
+    next: Next,
+) -> impl IntoResponse {
+    Span::current().record("ip", format!("{}", addr));
+
+    next.run(req).await
 }
 
 fn app(state: Arc<AppState>) -> Router {
@@ -96,17 +118,26 @@ fn app(state: Arc<AppState>) -> Router {
         .route("/publish", post(post_publish));
     Router::new()
         .nest("/api", api)
-        .layer(TraceLayer::new_for_http().make_span_with(|_request: &Request<Body>| {
-            let span = tracing::span!(Level::INFO, "request", method = field::Empty, uri = field::Empty, version = field::Empty);
-            span
-        }).on_response(|response: &Response<Body>, latency: Duration, _span: &Span| {
-            tracing::info!("response: {} latency: {:?}", response.status(), latency);
-        }).on_request(|request: &Request<Body>, span: &Span| {
-            span
-                .record("version", format!("{:?}", request.version()))
-                .record("uri", format!("{}", request.uri()))
-                .record("method", format!("{}", request.method()));
-        }))
+        .layer(middleware::from_fn(add_ip_trace))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(
+                    |request: &Request| {
+                        info_span!("request", ip = field::Empty, method = %request.method(), uri = %request.uri(), version = ?request.version())
+                    }
+                )
+                .on_response(
+                    |response: &Response<Body>, latency: Duration, _span: &Span| {
+                        match response.status() {
+                            StatusCode::CREATED | StatusCode::OK => 
+                                tracing::info!("{} {:.3?}", response.status(), latency),
+                            _ =>
+                                tracing::error!("{} {:.3?}", response.status(), latency),
+                        };
+                    },
+                )
+                .on_failure(|_, _: Duration, _: &Span| {}),
+        )
         .with_state(state)
 }
 
