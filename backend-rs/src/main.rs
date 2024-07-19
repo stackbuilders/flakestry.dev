@@ -60,7 +60,7 @@ struct GetFlakeResponse {
 #[derive(serde::Serialize, sqlx::FromRow)]
 struct FlakeRelease {
     #[serde(skip_serializing)]
-    id: i32,
+    id: i64,
     owner: String,
     repo: String,
     version: String,
@@ -180,7 +180,7 @@ async fn get_flake(
             );
         }
         // TODO: This query is actually a join between different tables
-        let releases = sqlx::query_as::<_, FlakeRelease>(
+        let mut releases = sqlx::query_as::<_, FlakeRelease>(
             "SELECT release.id AS id, \
                 githubowner.name AS owner, \
                 githubrepo.name AS repo, \
@@ -195,7 +195,7 @@ async fn get_flake(
         // .bind(hits.keys().cloned().collect::<Vec<i64>>())
         .fetch_all(&state.pool)
         .await?;
-        // releases.sort_by(|a, b| hits[&b.id].cmp(&hits[&a.id]));
+        releases.sort_by(|a, b| hits[&b.id].partial_cmp(&hits[&a.id]).unwrap());
         releases
     } else {
         sqlx::query_as::<_, FlakeRelease>(
