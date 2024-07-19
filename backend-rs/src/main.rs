@@ -128,12 +128,12 @@ fn app(state: Arc<AppState>) -> Router {
                 )
                 .on_response(
                     |response: &Response<Body>, latency: Duration, _span: &Span| {
-                        match response.status() {
-                            StatusCode::CREATED | StatusCode::OK => 
-                                tracing::info!("{} {:.3?}", response.status(), latency),
-                            _ =>
-                                tracing::error!("{} {:.3?}", response.status(), latency),
-                        };
+                        if response.status().is_server_error(){
+                            tracing::error!("{} {:.3?}", response.status(), latency);
+                        }
+                        else {
+                            tracing::info!("{} {:.3?}", response.status(), latency);
+                        }
                     },
                 )
                 .on_failure(|_, _: Duration, _: &Span| {}),
