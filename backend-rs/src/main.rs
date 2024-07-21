@@ -115,10 +115,10 @@ fn app(state: Arc<AppState>) -> Router {
 
 async fn get_flake(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(mut params): Query<HashMap<String, String>>,
 ) -> Result<Json<GetFlakeResponse>, AppError> {
-    let query = params.get("q");
-    let releases = if let Some(q) = query {
+    let query = params.remove("q");
+    let releases = if let Some(ref q) = query {
         let response = search_flakes(&state.opensearch, q).await?;
         // TODO: Remove this unwrap, use fold or map to create the HashMap
         let mut hits: HashMap<i32, f64> = HashMap::new();
@@ -145,8 +145,7 @@ async fn get_flake(
     return Ok(Json(GetFlakeResponse {
         releases,
         count,
-        // TODO: Try to avoid using cloned()
-        query: query.cloned(),
+        query,
     }));
 }
 
