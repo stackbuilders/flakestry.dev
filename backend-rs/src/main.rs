@@ -119,16 +119,7 @@ async fn get_flake(
 ) -> Result<Json<GetFlakeResponse>, AppError> {
     let query = params.remove("q");
     let releases = if let Some(ref q) = query {
-        let response = search_flakes(&state.opensearch, q).await?;
-        // TODO: Remove this unwrap, use fold or map to create the HashMap
-        let mut hits: HashMap<i32, f64> = HashMap::new();
-        for hit in response["hits"]["hits"].as_array().unwrap() {
-            // TODO: properly handle errors
-            hits.insert(
-                hit["_id"].as_str().unwrap().parse().unwrap(),
-                hit["_score"].as_f64().unwrap(),
-            );
-        }
+        let hits = search_flakes(&state.opensearch, q).await?;
 
         let mut releases = get_flakes_by_ids(hits.keys().collect(), &state.pool).await?;
 

@@ -4,6 +4,7 @@ use opensearch::{
     OpenSearch, SearchParts,
 };
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 pub async fn create_flake_index(opensearch: &OpenSearch) -> Result<(), opensearch::Error> {
     let status = opensearch
@@ -27,7 +28,7 @@ pub async fn create_flake_index(opensearch: &OpenSearch) -> Result<(), opensearc
 pub async fn search_flakes(
     opensearch: &OpenSearch,
     q: &String,
-) -> Result<Value, opensearch::Error> {
+) -> Result<HashMap<i32, f64>, opensearch::Error> {
     let res = opensearch
         .search(SearchParts::Index(&["flakes"]))
         .size(10)
@@ -51,5 +52,16 @@ pub async fn search_flakes(
         .json::<Value>()
         .await?;
 
-    Ok(res)
+    // TODO: Remove this unwrap, use fold or map to create the HashMap
+    let mut hits: HashMap<i32, f64> = HashMap::new();
+
+    for hit in res["hits"]["hits"].as_array().unwrap() {
+        // TODO: properly handle errors
+        hits.insert(
+            hit["_id"].as_str().unwrap().parse().unwrap(),
+            hit["_score"].as_f64().unwrap(),
+        );
+    }
+
+    Ok(hits)
 }
