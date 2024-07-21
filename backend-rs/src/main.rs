@@ -8,13 +8,15 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use opensearch::{indices::IndicesCreateParts, OpenSearch, SearchParts};
-use serde_json::{json, Value};
+use core::time::Duration;
+use opensearch::OpenSearch;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use tower_http::trace::TraceLayer;
 use tracing::{field, info_span, Span};
 use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use flakestry_dev::search::{create_flake_index, search_flakes};
 
 struct AppState {
     opensearch: OpenSearch,
@@ -82,13 +84,7 @@ async fn main() {
         opensearch: OpenSearch::default(),
         pool,
     });
-    // TODO: check if index exist before creating one
-    let _ = state
-        .opensearch
-        .indices()
-        .create(IndicesCreateParts::Index("flakes"))
-        .send()
-        .await;
+    let _ = create_flake_index(&state.opensearch).await;
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     tracing::info!("Listening on 0.0.0.0:3000");
@@ -134,29 +130,7 @@ async fn get_flake(
 ) -> Result<Json<GetFlakeResponse>, AppError> {
     let query = params.get("q");
     let releases = if let Some(q) = query {
-        let response = &state
-            .opensearch
-            .search(SearchParts::Index(&["flakes"]))
-            .size(10)
-            .body(json!({
-                "query": {
-                    "multi_match": {
-                        "query": q,
-                        "fuzziness": "AUTO",
-                        "fields": [
-                            "description^2",
-                            "readme",
-                            "outputs",
-                            "repo^2",
-                            "owner^2",
-                        ],
-                    }
-                }
-            }))
-            .send()
-            .await?
-            .json::<Value>()
-            .await?;
+        let response = search_flakes(&state.opensearch, q).await?;
         // TODO: Remove this unwrap, use fold or map to create the HashMap
         let mut hits: HashMap<i64, f64> = HashMap::new();
         for hit in response["hits"]["hits"].as_array().unwrap() {
@@ -221,6 +195,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
+    use serde_json::Value;
     use sqlx::postgres::PgConnectOptions;
     use tower::ServiceExt;
 
