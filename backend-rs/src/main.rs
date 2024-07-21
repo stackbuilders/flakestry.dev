@@ -17,6 +17,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use flakestry_dev::search::{create_flake_index, search_flakes};
+use flakestry_dev::sql::{get_flakes, get_flakes_by_ids, FlakeRelease};
 
 struct AppState {
     opensearch: OpenSearch,
@@ -55,18 +56,6 @@ struct GetFlakeResponse {
     releases: Vec<FlakeRelease>,
     count: usize,
     query: Option<String>,
-}
-
-#[derive(serde::Serialize, sqlx::FromRow)]
-struct FlakeRelease {
-    #[serde(skip_serializing)]
-    id: i64,
-    owner: String,
-    repo: String,
-    version: String,
-    description: String,
-    // TODO: Change to DateTime?
-    created_at: String,
 }
 
 #[tokio::main]
@@ -132,7 +121,7 @@ async fn get_flake(
     let releases = if let Some(q) = query {
         let response = search_flakes(&state.opensearch, q).await?;
         // TODO: Remove this unwrap, use fold or map to create the HashMap
-        let mut hits: HashMap<i64, f64> = HashMap::new();
+        let mut hits: HashMap<i32, f64> = HashMap::new();
         for hit in response["hits"]["hits"].as_array().unwrap() {
             // TODO: properly handle errors
             hits.insert(
@@ -140,39 +129,17 @@ async fn get_flake(
                 hit["_score"].as_f64().unwrap(),
             );
         }
-        // TODO: This query is actually a join between different tables
-        let mut releases = sqlx::query_as::<_, FlakeRelease>(
-            "SELECT release.id AS id, \
-                githubowner.name AS owner, \
-                githubrepo.name AS repo, \
-                release.version AS version, \
-                release.description AS description, \
-                CAST(release.created_at AS VARCHAR) AS created_at \
-                FROM release \
-                INNER JOIN githubrepo ON githubrepo.id = release.repo_id \
-                INNER JOIN githubowner ON githubowner.id = githubrepo.owner_id \
-                WHERE release.id IN (1)",
-        )
-        // .bind(hits.keys().cloned().collect::<Vec<i64>>())
-        .fetch_all(&state.pool)
-        .await?;
-        releases.sort_by(|a, b| hits[&b.id].partial_cmp(&hits[&a.id]).unwrap());
+
+        let mut releases = get_flakes_by_ids(hits.keys().collect(), &state.pool).await?;
+
+        if !releases.is_empty() {
+            // Should this be done by the DB?
+            releases.sort_by(|a, b| hits[&b.id].partial_cmp(&hits[&a.id]).unwrap());
+        }
+
         releases
     } else {
-        sqlx::query_as::<_, FlakeRelease>(
-            "SELECT release.id AS id, \
-                githubowner.name AS owner, \
-                githubrepo.name AS repo, \
-                release.version AS version, \
-                release.description AS description, \
-                CAST(release.created_at AS VARCHAR) AS created_at \
-                FROM release \
-                INNER JOIN githubrepo ON githubrepo.id = release.repo_id \
-                INNER JOIN githubowner ON githubowner.id = githubrepo.owner_id \
-                ORDER BY release.created_at DESC LIMIT 100",
-        )
-        .fetch_all(&state.pool)
-        .await?
+        get_flakes(&state.pool).await?
     };
     let count = releases.len();
     return Ok(Json(GetFlakeResponse {
