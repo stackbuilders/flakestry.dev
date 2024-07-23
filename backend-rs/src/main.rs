@@ -1,15 +1,13 @@
 use std::{collections::HashMap, env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    body::Body,
     extract::{ConnectInfo, Query, Request, State},
-    http::{Response, StatusCode},
+    http::StatusCode,
     middleware::{self, Next},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
-use core::time::Duration;
 use opensearch::{indices::IndicesCreateParts, OpenSearch, SearchParts};
 use serde_json::{json, Value};
 use sqlx::postgres::{PgPool, PgPoolOptions};
@@ -126,17 +124,6 @@ fn app(state: Arc<AppState>) -> Router {
                         info_span!("request", ip = field::Empty, method = %request.method(), uri = %request.uri(), version = ?request.version())
                     }
                 )
-                .on_response(
-                    |response: &Response<Body>, latency: Duration, _span: &Span| {
-                        if response.status().is_server_error(){
-                            tracing::error!("{} {:.3?}", response.status(), latency);
-                        }
-                        else {
-                            tracing::info!("{} {:.3?}", response.status(), latency);
-                        }
-                    },
-                )
-                .on_failure(|_, _: Duration, _: &Span| {}),
         )
         .with_state(state)
 }
