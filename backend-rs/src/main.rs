@@ -1,15 +1,12 @@
 use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    body::Body,
     extract::{ConnectInfo, Request},
-    http::Response,
     middleware::{self, Next},
     response::IntoResponse,
     routing::{get, post},
     Router,
 };
-use core::time::Duration;
 use opensearch::OpenSearch;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::trace::TraceLayer;
