@@ -1,62 +1,25 @@
-use std::{collections::HashMap, env, net::SocketAddr, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    extract::{ConnectInfo, Query, Request, State},
-    http::StatusCode,
+    body::Body,
+    extract::{ConnectInfo, Request},
+    http::Response,
     middleware::{self, Next},
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
+    Router,
 };
 use core::time::Duration;
 use opensearch::OpenSearch;
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::postgres::PgPoolOptions;
 use tower_http::trace::TraceLayer;
 use tracing::{field, info_span, Span};
 use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use flakestry_dev::search::{create_flake_index, search_flakes};
-use flakestry_dev::sql::{get_flakes, get_flakes_by_ids, FlakeRelease};
-
-struct AppState {
-    opensearch: OpenSearch,
-    pool: PgPool,
-}
-
-enum AppError {
-    OpenSearchError(opensearch::Error),
-    SqlxError(sqlx::Error),
-}
-
-impl From<opensearch::Error> for AppError {
-    fn from(value: opensearch::Error) -> Self {
-        AppError::OpenSearchError(value)
-    }
-}
-
-impl From<sqlx::Error> for AppError {
-    fn from(value: sqlx::Error) -> Self {
-        AppError::SqlxError(value)
-    }
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        let body = match self {
-            AppError::OpenSearchError(error) => error.to_string(),
-            AppError::SqlxError(error) => error.to_string(),
-        };
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
-    }
-}
-
-#[derive(serde::Serialize)]
-struct GetFlakeResponse {
-    releases: Vec<FlakeRelease>,
-    count: usize,
-    query: Option<String>,
-}
+use flakestry_dev::api::{get_flake, post_publish};
+use flakestry_dev::common::AppState;
+use flakestry_dev::search::create_flake_index;
 
 #[tokio::main]
 async fn main() {
@@ -111,37 +74,6 @@ fn app(state: Arc<AppState>) -> Router {
                 )
         )
         .with_state(state)
-}
-
-async fn get_flake(
-    State(state): State<Arc<AppState>>,
-    Query(mut params): Query<HashMap<String, String>>,
-) -> Result<Json<GetFlakeResponse>, AppError> {
-    let query = params.remove("q");
-    let releases = if let Some(ref q) = query {
-        let hits = search_flakes(&state.opensearch, q).await?;
-
-        let mut releases = get_flakes_by_ids(hits.keys().collect(), &state.pool).await?;
-
-        if !releases.is_empty() {
-            // Should this be done by the DB?
-            releases.sort_by(|a, b| hits[&b.id].partial_cmp(&hits[&a.id]).unwrap());
-        }
-
-        releases
-    } else {
-        get_flakes(&state.pool).await?
-    };
-    let count = releases.len();
-    return Ok(Json(GetFlakeResponse {
-        releases,
-        count,
-        query,
-    }));
-}
-
-async fn post_publish() -> &'static str {
-    "Publish"
 }
 
 #[cfg(test)]
