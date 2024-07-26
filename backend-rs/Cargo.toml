@@ -3,14 +3,6 @@ name = "backend-rs"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-name = "flakestry_dev"
-path = "src/lib.rs"
-
-[[bin]]
-name = "flakestry-dev-rs"
-path = "src/main.rs"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

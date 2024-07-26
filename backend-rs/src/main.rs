@@ -1,3 +1,8 @@
+mod api;
+mod common;
+mod search;
+mod sql;
+
 use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
@@ -14,9 +19,9 @@ use tracing::{field, info_span, Span};
 use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use flakestry_dev::api::{get_flake, post_publish};
-use flakestry_dev::common::AppState;
-use flakestry_dev::search::create_flake_index;
+use crate::api::{get_flake, post_publish};
+use crate::common::AppState;
+use crate::search::create_flake_index;
 
 #[tokio::main]
 async fn main() {
