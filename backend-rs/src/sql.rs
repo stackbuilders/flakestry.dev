@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use sqlx::{Pool, Postgres};
 
 #[derive(serde::Serialize, sqlx::FromRow)]
@@ -8,8 +9,7 @@ pub struct FlakeRelease {
     repo: String,
     version: String,
     description: Option<String>,
-    // TODO: Change to DateTime?
-    created_at: String,
+    created_at: NaiveDateTime,
 }
 
 pub async fn get_flakes_by_ids(
@@ -29,28 +29,26 @@ pub async fn get_flakes_by_ids(
             githubrepo.name AS repo, \
             release.version AS version, \
             release.description AS description, \
-            CAST(release.created_at AS VARCHAR) AS created_at \
+            release.created_at AS created_at \
             FROM release \
             INNER JOIN githubrepo ON githubrepo.id = release.repo_id \
             INNER JOIN githubowner ON githubowner.id = githubrepo.owner_id \
             WHERE release.id IN ({param_string})",
     );
 
-    let releases = sqlx::query_as::<_, FlakeRelease>(&query)
-        .fetch_all(pool)
-        .await?;
+    let releases: Vec<FlakeRelease> = sqlx::query_as(&query).fetch_all(pool).await?;
 
     Ok(releases)
 }
 
 pub async fn get_flakes(pool: &Pool<Postgres>) -> Result<Vec<FlakeRelease>, sqlx::Error> {
-    let releases = sqlx::query_as::<_, FlakeRelease>(
+    let releases: Vec<FlakeRelease> = sqlx::query_as(
         "SELECT release.id AS id, \
             githubowner.name AS owner, \
             githubrepo.name AS repo, \
             release.version AS version, \
             release.description AS description, \
-            CAST(release.created_at AS VARCHAR) AS created_at \
+            release.created_at AS created_at \
             FROM release \
             INNER JOIN githubrepo ON githubrepo.id = release.repo_id \
             INNER JOIN githubowner ON githubowner.id = githubrepo.owner_id \
