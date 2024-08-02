@@ -1,8 +1,5 @@
 mod api;
 mod common;
-mod search;
-
-use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
     extract::{ConnectInfo, Request},
@@ -11,8 +8,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use opensearch::OpenSearch;
+use opensearch::{
+    http::StatusCode,
+    indices::{IndicesCreateParts, IndicesGetParts},
+    OpenSearch,
+};
 use sqlx::postgres::PgPoolOptions;
+use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
 use tracing::{field, info_span, Span};
 use tracing_subscriber::{fmt, EnvFilter};
@@ -20,7 +22,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::api::{get_flake, post_publish};
 use crate::common::AppState;
-use crate::search::create_flake_index;
 
 #[tokio::main]
 async fn main() {
@@ -75,6 +76,25 @@ fn app(state: Arc<AppState>) -> Router {
                 )
         )
         .with_state(state)
+}
+
+async fn create_flake_index(opensearch: &OpenSearch) -> Result<(), opensearch::Error> {
+    let status = opensearch
+        .indices()
+        .get(IndicesGetParts::Index(&["flakes"]))
+        .send()
+        .await?
+        .status_code();
+
+    if status == StatusCode::NOT_FOUND {
+        let _ = opensearch
+            .indices()
+            .create(IndicesCreateParts::Index("flakes"))
+            .send()
+            .await?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
