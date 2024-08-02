@@ -1,7 +1,6 @@
 mod api;
 mod common;
 mod search;
-mod sql;
 
 use std::{env, net::SocketAddr, sync::Arc};
 
