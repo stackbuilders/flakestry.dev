@@ -167,6 +167,5 @@ in
     # https://github.com/astral-sh/ruff/issues/1904
     black.enable = true;
     elm-format.enable = true;
-    cargo-check.enable = true;
   };
 }
