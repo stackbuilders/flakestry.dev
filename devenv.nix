@@ -70,6 +70,12 @@ in
     channel = "stable";
   };
 
+  scripts.build-be-rs.exec = ''
+    pushd backend-rs
+    cargo build
+    popd
+  '';
+
   services.opensearch.enable = !config.container.isBuilding;
   services.postgres.enable = !config.container.isBuilding;
   services.caddy.enable = true;
@@ -161,5 +167,6 @@ in
     # https://github.com/astral-sh/ruff/issues/1904
     black.enable = true;
     elm-format.enable = true;
+    cargo-check.enable = true;
   };
 }

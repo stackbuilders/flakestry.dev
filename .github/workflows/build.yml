@@ -27,6 +27,8 @@ jobs:
       run: nix profile install tarball+https://install.devenv.sh/latest
       shell: sh
     - run: devenv ci
+    - name: Build BE
+      run: devenv shell build-be-rs
     - name: Deploy staging
       if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
       env:
