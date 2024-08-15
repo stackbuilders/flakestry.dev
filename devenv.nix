@@ -39,7 +39,7 @@ in
     pkgs.flyctl
     pkgs.cloudflared
     pkgs.openapi-generator-cli
-    pkgs.nodePackages.pyright
+    pkgs.pyright
   ] ++ lib.optionals pkgs.stdenv.isDarwin [
     pkgs.darwin.CF
     pkgs.darwin.Security
