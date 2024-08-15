@@ -103,6 +103,10 @@ in
     export PATH="${config.devenv.root}/node_modules/.bin:$PATH"
   '';
 
+  enterTest = ''
+    echo "Tests cannot fail if you don't have them. Think about it."
+  '';
+
   scripts.fetch-openapi-templates.exec =
     let
       openApiSrc = pkgs.fetchFromGitHub {
