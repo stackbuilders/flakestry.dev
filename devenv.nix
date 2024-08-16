@@ -70,12 +70,6 @@ in
     channel = "stable";
   };
 
-  scripts.build-be-rs.exec = ''
-    pushd backend-rs
-    cargo build
-    popd
-  '';
-
   services.opensearch.enable = !config.container.isBuilding;
   services.postgres.enable = !config.container.isBuilding;
   services.caddy.enable = true;
@@ -104,7 +98,9 @@ in
   '';
 
   enterTest = ''
-    echo "Tests cannot fail if you don't have them. Think about it."
+    pushd backend-rs
+    cargo build
+    popd
   '';
 
   scripts.fetch-openapi-templates.exec =
