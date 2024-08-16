@@ -5,20 +5,33 @@ use axum::{
 use chrono::NaiveDateTime;
 use opensearch::{OpenSearch, SearchParts};
 use serde_json::{json, Value};
-use sqlx::{Pool, Postgres};
+use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row};
 use std::{collections::HashMap, sync::Arc};
 
 use crate::common::{AppError, AppState};
 
-#[derive(serde::Serialize, sqlx::FromRow)]
+#[derive(serde::Serialize)]
 struct FlakeRelease {
     #[serde(skip_serializing)]
     id: i32,
     owner: String,
     repo: String,
     version: String,
-    description: Option<String>,
+    description: String,
     created_at: NaiveDateTime,
+}
+
+impl FromRow<'_, PgRow> for FlakeRelease {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            owner: row.try_get("owner")?,
+            repo: row.try_get("repo")?,
+            version: row.try_get("version")?,
+            description: row.try_get("description").unwrap_or_default(),
+            created_at: row.try_get("created_at")?,
+        })
+    }
 }
 
 #[derive(serde::Serialize)]

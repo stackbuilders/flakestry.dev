@@ -99,60 +99,85 @@ async fn create_flake_index(opensearch: &OpenSearch) -> Result<(), opensearch::E
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
     use super::*;
-    use axum::body::Body;
-    use axum::http::{Request, StatusCode};
-    use http_body_util::BodyExt;
-    use serde_json::Value;
-    use sqlx::postgres::PgConnectOptions;
-    use tower::ServiceExt;
+
+    use axum::http::StatusCode;
+    use std::env;
+    use tokio::net::TcpListener;
+    use tokio::task::JoinHandle;
+    use url::Url;
+
+    pub struct TestApp {
+        pub base_url: Url,
+        pub client: reqwest::Client,
+        server: JoinHandle<()>,
+    }
+
+    impl TestApp {
+        pub async fn new() -> TestApp {
+            let database_url = env::var("DATABASE_URL").unwrap();
+            let pool = PgPoolOptions::new().connect(&database_url).await.unwrap();
+            let state = Arc::new(AppState {
+                opensearch: OpenSearch::default(),
+                pool,
+            });
+            let app = app(state);
+
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("Could not bind ephemeral socket");
+            let addr = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .await
+                .unwrap();
+            });
+
+            TestApp {
+                base_url: Url::parse(&format!("http://{addr}")).unwrap(),
+                client: reqwest::Client::new(),
+                server,
+            }
+        }
+
+        pub fn get(&self, path: &str) -> reqwest::RequestBuilder {
+            let base_url = Some(&self.base_url);
+            let base = Url::options().base_url(base_url);
+            let url = base.parse(path).unwrap();
+            self.client.get(url)
+        }
+    }
+
+    impl Drop for TestApp {
+        fn drop(&mut self) {
+            self.server.abort()
+        }
+    }
 
     #[tokio::test]
     async fn test_get_flake_with_params() {
-        let host = env::var("PGHOST").unwrap().to_string();
-        let opts = PgConnectOptions::new().host(&host);
-        let pool = PgPoolOptions::new().connect_with(opts).await.unwrap();
-        let state = Arc::new(AppState {
-            opensearch: OpenSearch::default(),
-            pool,
-        });
-        let app = app(state);
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/flake?q=search")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let body: Value = serde_json::from_slice(&body).unwrap();
-        println!("#{body}");
-        // assert_eq!(response.status(), StatusCode::OK);
+        let app = TestApp::new().await;
+        let expected_response = "{\"releases\":[{\"owner\":\"nix-community\",\"repo\":\"home-manager\",\"version\":\"23.05\",\"description\":\"\",\"created_at\":\"2024-07-12T23:08:41.029566\"}],\"count\":1,\"query\":\"search\"}";
+
+        let response = app.get("/api/flake?q=search").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.text().await.unwrap();
+        assert_eq!(body, expected_response)
     }
 
     #[tokio::test]
     async fn test_get_flake_without_params() {
-        let host = env::var("PGHOST").unwrap().to_string();
-        let opts = PgConnectOptions::new().host(&host);
-        let pool = PgPoolOptions::new().connect_with(opts).await.unwrap();
-        let state = Arc::new(AppState {
-            opensearch: OpenSearch::default(),
-            pool,
-        });
-        let app = app(state);
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/flake")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let app = TestApp::new().await;
+        let expected_response = "{\"releases\":[{\"owner\":\"nix-community\",\"repo\":\"home-manager\",\"version\":\"23.05\",\"description\":\"\",\"created_at\":\"2024-07-12T23:08:41.029566\"},{\"owner\":\"nixos\",\"repo\":\"nixpkgs\",\"version\":\"22.05\",\"description\":\"nixpkgs is official package collection\",\"created_at\":\"2024-07-12T23:08:41.005518\"},{\"owner\":\"nixos\",\"repo\":\"nixpkgs\",\"version\":\"23.05\",\"description\":\"nixpkgs is official package collection\",\"created_at\":\"2024-07-12T23:08:41.005518\"}],\"count\":3,\"query\":null}";
+
+        let response = app.get("/api/flake").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.text().await.unwrap();
+        assert_eq!(body, expected_response)
     }
 }
