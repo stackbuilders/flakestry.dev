@@ -166,7 +166,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.text().await.unwrap();
-        assert_eq!(body, expected_response)
+        assert_eq!(body, expected_response);
     }
 
     #[tokio::test]
@@ -178,6 +178,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.text().await.unwrap();
-        assert_eq!(body, expected_response)
+        assert_eq!(body, expected_response);
     }
 }
