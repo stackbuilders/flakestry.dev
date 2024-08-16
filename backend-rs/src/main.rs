@@ -170,6 +170,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_flake_with_params_no_result() {
+        let app = TestApp::new().await;
+        let expected_response = "{\"releases\":[],\"count\":0,\"query\":\"nothing\"}";
+
+        let response = app.get("/api/flake?q=nothing").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.text().await.unwrap();
+        assert_eq!(body, expected_response);
+    }
+
+    #[tokio::test]
     async fn test_get_flake_without_params() {
         let app = TestApp::new().await;
         let expected_response = "{\"releases\":[{\"owner\":\"nix-community\",\"repo\":\"home-manager\",\"version\":\"23.05\",\"description\":\"\",\"created_at\":\"2024-07-12T23:08:41.029566\"},{\"owner\":\"nixos\",\"repo\":\"nixpkgs\",\"version\":\"22.05\",\"description\":\"nixpkgs is official package collection\",\"created_at\":\"2024-07-12T23:08:41.005518\"},{\"owner\":\"nixos\",\"repo\":\"nixpkgs\",\"version\":\"23.05\",\"description\":\"nixpkgs is official package collection\",\"created_at\":\"2024-07-12T23:08:41.005518\"}],\"count\":3,\"query\":null}";
