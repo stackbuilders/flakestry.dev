@@ -35,6 +35,7 @@ in
   packages = [
     pkgs.postgresql
     pkgs.gnused
+    pkgs.openssl
   ] ++ lib.optionals (!config.container.isBuilding) [
     pkgs.flyctl
     pkgs.cloudflared
