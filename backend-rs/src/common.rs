@@ -10,6 +10,7 @@ pub struct AppState {
 pub enum AppError {
     OpenSearchError(opensearch::Error),
     SqlxError(sqlx::Error),
+    UnexpectedError(anyhow::Error),
 }
 
 impl From<opensearch::Error> for AppError {
@@ -24,11 +25,18 @@ impl From<sqlx::Error> for AppError {
     }
 }
 
+impl From<anyhow::Error> for AppError {
+    fn from(value: anyhow::Error) -> Self {
+        AppError::UnexpectedError(value)
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let body = match self {
             AppError::OpenSearchError(error) => error.to_string(),
             AppError::SqlxError(error) => error.to_string(),
+            AppError::UnexpectedError(error) => error.to_string(),
         };
         (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
     }
