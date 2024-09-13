@@ -20,7 +20,7 @@ use tracing::{field, info_span, Span};
 use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::api::{get_flake, post_publish};
+use crate::api::{get_flake, post_publish, read_repo};
 use crate::common::AppState;
 
 #[tokio::main]
@@ -68,6 +68,7 @@ async fn add_ip_trace(
 fn app(state: Arc<AppState>) -> Router {
     let api = Router::new()
         .route("/flake", get(get_flake))
+        .route("/flake/github/:owner/:repo", get(read_repo))
         .route("/publish", post(post_publish));
     Router::new()
         .nest("/api", api)
