@@ -2,7 +2,7 @@
   "name": "flakestry",
   "dependencies": {
     "clipboard": "^2.0.11",
-    "dompurify": "^3.0.6",
+    "dompurify": "^3.1.3",
     "highlight.js": "^11.8.0",
     "marked": "^9.0.3",
     "marked-alert": "^1.1.2",
