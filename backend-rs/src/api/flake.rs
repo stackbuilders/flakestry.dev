@@ -92,7 +92,7 @@ pub async fn get_flake(
 async fn get_flakes_by_ids(
     flake_ids: Vec<&i32>,
     pool: &Pool<Postgres>,
-) -> Result<Vec<FlakeRelease>, sqlx::Error> {
+) -> Result<Vec<FlakeRelease>, AppError> {
     if flake_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -113,12 +113,16 @@ async fn get_flakes_by_ids(
             WHERE release.id IN ({param_string})",
     );
 
-    let releases: Vec<FlakeRelease> = sqlx::query_as(&query).fetch_all(pool).await?;
+    let releases: Vec<FlakeRelease> = 
+        sqlx::query_as(&query)
+        .fetch_all(pool)
+        .await
+        .context("Failed to fetch flakes by id from database")?;
 
     Ok(releases)
 }
 
-async fn get_flakes(pool: &Pool<Postgres>) -> Result<Vec<FlakeRelease>, sqlx::Error> {
+async fn get_flakes(pool: &Pool<Postgres>) -> Result<Vec<FlakeRelease>, AppError> {
     let releases: Vec<FlakeRelease> = sqlx::query_as(
         "SELECT release.id AS id, \
             githubowner.name AS owner, \
@@ -132,7 +136,8 @@ async fn get_flakes(pool: &Pool<Postgres>) -> Result<Vec<FlakeRelease>, sqlx::Er
             ORDER BY release.created_at DESC LIMIT 100",
     )
     .fetch_all(pool)
-    .await?;
+    .await
+    .context("Failed to fetch flakes from database")?;
 
     Ok(releases)
 }
@@ -157,9 +162,11 @@ async fn search_flakes(opensearch: &OpenSearch, q: &String) -> Result<HashMap<i3
             }
         }))
         .send()
-        .await?
+        .await
+        .context("Failed to send opensearch request")?
         .json::<Value>()
-        .await?;
+        .await
+        .context("Failed to decode opensearch response as json")?;
 
     // TODO: Remove this unwrap, use fold or map to create the HashMap
     let mut hits: HashMap<i32, f64> = HashMap::new();
