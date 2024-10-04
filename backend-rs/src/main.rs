@@ -111,6 +111,7 @@ mod tests {
     use std::env;
     use tokio::net::TcpListener;
     use tokio::task::JoinHandle;
+    use serde_json::Value;
     use url::Url;
 
     pub struct TestApp {
@@ -163,39 +164,96 @@ mod tests {
         }
     }
 
+    fn json_from_str(str: &str) -> Value
+    {
+        serde_json::from_str(str).unwrap()
+    }
+    
     #[tokio::test]
     async fn test_get_flake_with_params() {
         let app = TestApp::new().await;
-        let expected_response = "{\"releases\":[{\"owner\":\"nix-community\",\"repo\":\"home-manager\",\"version\":\"23.05\",\"description\":\"\",\"created_at\":\"2024-07-12T23:08:41.029566\"}],\"count\":1,\"query\":\"search\"}";
+        let expected_response = json_from_str(r#"
+        {
+            "releases": [
+                {
+                    "owner": "nix-community",
+                    "repo": "home-manager",
+                    "version": "23.05",
+                    "description": "",
+                    "created_at": "2024-09-21T16:28:15.924267"
+                }
+            ],
+            "count": 1,
+            "query": "search"
+        }"#);
+        
 
         let response = app.get("/api/flake?q=search").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.text().await.unwrap();
-        assert_eq!(body, expected_response);
+        let response: Value = json_from_str(&body);
+        
+        assert_eq!(response, expected_response);
     }
 
     #[tokio::test]
     async fn test_get_flake_with_params_no_result() {
         let app = TestApp::new().await;
-        let expected_response = "{\"releases\":[],\"count\":0,\"query\":\"nothing\"}";
+        let expected_response = json_from_str(r#"
+        {
+            "releases": [],
+            "count": 0,
+            "query": "nothing"
+        }"#);
 
         let response = app.get("/api/flake?q=nothing").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.text().await.unwrap();
-        assert_eq!(body, expected_response);
+        let response = json_from_str(&body);
+        
+        assert_eq!(response, expected_response);
     }
 
     #[tokio::test]
     async fn test_get_flake_without_params() {
         let app = TestApp::new().await;
-        let expected_response = "{\"releases\":[{\"owner\":\"nix-community\",\"repo\":\"home-manager\",\"version\":\"23.05\",\"description\":\"\",\"created_at\":\"2024-07-12T23:08:41.029566\"},{\"owner\":\"nixos\",\"repo\":\"nixpkgs\",\"version\":\"22.05\",\"description\":\"nixpkgs is official package collection\",\"created_at\":\"2024-07-12T23:08:41.005518\"},{\"owner\":\"nixos\",\"repo\":\"nixpkgs\",\"version\":\"23.05\",\"description\":\"nixpkgs is official package collection\",\"created_at\":\"2024-07-12T23:08:41.005518\"}],\"count\":3,\"query\":null}";
+        let expected_response = json_from_str(r#"
+        {
+            "releases": [
+                {
+                    "owner": "nixos",
+                    "repo": "nixpkgs",
+                    "version": "23.05",
+                    "description": "nixpkgs is official package collection",
+                    "created_at": "2024-09-21T16:28:15.924267"
+                },
+                {
+                    "owner": "nix-community",
+                    "repo": "home-manager",
+                    "version": "23.05",
+                    "description": "",
+                    "created_at": "2024-09-21T16:28:15.924267"
+                },
+                {
+                    "owner": "nixos",
+                    "repo": "nixpkgs",
+                    "version": "22.05",
+                    "description": "nixpkgs is official package collection",
+                    "created_at": "2024-09-21T16:28:15.923266"
+                }
+            ],
+            "count": 3,
+            "query": null
+        }"#);
 
         let response = app.get("/api/flake").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.text().await.unwrap();
-        assert_eq!(body, expected_response);
+        let response = json_from_str(&body);
+        
+        assert_eq!(expected_response, response);
     }
 }
