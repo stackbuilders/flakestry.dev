@@ -164,9 +164,9 @@ mod tests {
         }
     }
 
-    fn json_from_str(str: &str) -> Value
+    fn json_from_str(s: &str) -> Value
     {
-        serde_json::from_str(str).unwrap()
+        serde_json::from_str(s).unwrap()
     }
     
     #[tokio::test]
@@ -250,6 +250,40 @@ mod tests {
 
         let response = app.get("/api/flake").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.text().await.unwrap();
+        let response = json_from_str(&body);
+        
+        assert_eq!(expected_response, response);
+    }
+
+    #[tokio::test]
+    async fn test_read_repo_non_existent_repo() {
+        let app = TestApp::new().await;
+        let expected_response = json_from_str(r#"
+        {
+            "detail": "Not Found"
+        }"#);
+
+        let response = app.get("/api/flake/github/nixos/doesnotexist").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = response.text().await.unwrap();
+        let response = json_from_str(&body);
+        
+        assert_eq!(expected_response, response);
+    }
+
+    #[tokio::test]
+    async fn test_read_repo_non_existent_owner() {
+        let app = TestApp::new().await;
+        let expected_response = json_from_str(r#"
+        {
+            "detail": "Not Found"
+        }"#);
+
+        let response = app.get("/api/flake/github/unkownowner/nixpkgs").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
         let body = response.text().await.unwrap();
         let response = json_from_str(&body);
