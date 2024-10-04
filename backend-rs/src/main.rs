@@ -20,7 +20,7 @@ use tracing::{field, info_span, Span};
 use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::api::{get_flake, post_publish};
+use crate::api::{get_flake, post_publish, read_repo};
 use crate::common::AppState;
 
 #[tokio::main]
@@ -68,6 +68,7 @@ async fn add_ip_trace(
 fn app(state: Arc<AppState>) -> Router {
     let api = Router::new()
         .route("/flake", get(get_flake))
+        .route("/flake/github/:owner/:repo", get(read_repo))
         .route("/publish", post(post_publish));
     Router::new()
         .nest("/api", api)
@@ -110,6 +111,7 @@ mod tests {
     use std::env;
     use tokio::net::TcpListener;
     use tokio::task::JoinHandle;
+    use serde_json::Value;
     use url::Url;
 
     pub struct TestApp {
@@ -162,39 +164,130 @@ mod tests {
         }
     }
 
+    fn json_from_str(s: &str) -> Value
+    {
+        serde_json::from_str(s).unwrap()
+    }
+    
     #[tokio::test]
     async fn test_get_flake_with_params() {
         let app = TestApp::new().await;
-        let expected_response = "{\"releases\":[{\"owner\":\"nix-community\",\"repo\":\"home-manager\",\"version\":\"23.05\",\"description\":\"\",\"created_at\":\"2024-07-12T23:08:41.029566\"}],\"count\":1,\"query\":\"search\"}";
+        let expected_response = json_from_str(r#"
+        {
+            "releases": [
+                {
+                    "owner": "nix-community",
+                    "repo": "home-manager",
+                    "version": "23.05",
+                    "description": "",
+                    "created_at": "2024-09-21T16:28:15.924267"
+                }
+            ],
+            "count": 1,
+            "query": "search"
+        }"#);
+        
 
         let response = app.get("/api/flake?q=search").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.text().await.unwrap();
-        assert_eq!(body, expected_response);
+        let response: Value = json_from_str(&body);
+        
+        assert_eq!(response, expected_response);
     }
 
     #[tokio::test]
     async fn test_get_flake_with_params_no_result() {
         let app = TestApp::new().await;
-        let expected_response = "{\"releases\":[],\"count\":0,\"query\":\"nothing\"}";
+        let expected_response = json_from_str(r#"
+        {
+            "releases": [],
+            "count": 0,
+            "query": "nothing"
+        }"#);
 
         let response = app.get("/api/flake?q=nothing").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.text().await.unwrap();
-        assert_eq!(body, expected_response);
+        let response = json_from_str(&body);
+        
+        assert_eq!(response, expected_response);
     }
 
     #[tokio::test]
     async fn test_get_flake_without_params() {
         let app = TestApp::new().await;
-        let expected_response = "{\"releases\":[{\"owner\":\"nix-community\",\"repo\":\"home-manager\",\"version\":\"23.05\",\"description\":\"\",\"created_at\":\"2024-07-12T23:08:41.029566\"},{\"owner\":\"nixos\",\"repo\":\"nixpkgs\",\"version\":\"22.05\",\"description\":\"nixpkgs is official package collection\",\"created_at\":\"2024-07-12T23:08:41.005518\"},{\"owner\":\"nixos\",\"repo\":\"nixpkgs\",\"version\":\"23.05\",\"description\":\"nixpkgs is official package collection\",\"created_at\":\"2024-07-12T23:08:41.005518\"}],\"count\":3,\"query\":null}";
+        let expected_response = json_from_str(r#"
+        {
+            "releases": [
+                {
+                    "owner": "nixos",
+                    "repo": "nixpkgs",
+                    "version": "23.05",
+                    "description": "nixpkgs is official package collection",
+                    "created_at": "2024-09-21T16:28:15.924267"
+                },
+                {
+                    "owner": "nix-community",
+                    "repo": "home-manager",
+                    "version": "23.05",
+                    "description": "",
+                    "created_at": "2024-09-21T16:28:15.924267"
+                },
+                {
+                    "owner": "nixos",
+                    "repo": "nixpkgs",
+                    "version": "22.05",
+                    "description": "nixpkgs is official package collection",
+                    "created_at": "2024-09-21T16:28:15.923266"
+                }
+            ],
+            "count": 3,
+            "query": null
+        }"#);
 
         let response = app.get("/api/flake").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.text().await.unwrap();
-        assert_eq!(body, expected_response);
+        let response = json_from_str(&body);
+        
+        assert_eq!(expected_response, response);
+    }
+
+    #[tokio::test]
+    async fn test_read_repo_non_existent_repo() {
+        let app = TestApp::new().await;
+        let expected_response = json_from_str(r#"
+        {
+            "detail": "Not Found"
+        }"#);
+
+        let response = app.get("/api/flake/github/nixos/doesnotexist").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = response.text().await.unwrap();
+        let response = json_from_str(&body);
+        
+        assert_eq!(expected_response, response);
+    }
+
+    #[tokio::test]
+    async fn test_read_repo_non_existent_owner() {
+        let app = TestApp::new().await;
+        let expected_response = json_from_str(r#"
+        {
+            "detail": "Not Found"
+        }"#);
+
+        let response = app.get("/api/flake/github/unkownowner/nixpkgs").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = response.text().await.unwrap();
+        let response = json_from_str(&body);
+        
+        assert_eq!(expected_response, response);
     }
 }
