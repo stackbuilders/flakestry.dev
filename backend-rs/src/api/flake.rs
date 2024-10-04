@@ -129,7 +129,7 @@ async fn get_repo_id(
     owner: &str,
     repo: &str,
     pool: &Pool<Postgres>,
-) -> Result<Option<RepoId>, sqlx::Error> {
+) -> Result<Option<RepoId>, AppError> {
     let query = "SELECT githubrepo.id as id \
             FROM githubrepo \
             INNER JOIN githubowner ON githubowner.id = githubrepo.owner_id \
@@ -139,7 +139,8 @@ async fn get_repo_id(
         .bind(&repo)
         .bind(&owner)
         .fetch_optional(pool)
-        .await?;
+        .await
+        .context("Failed to fetch repo id from database")?;
 
     Ok(repo_id)
 }
@@ -147,7 +148,7 @@ async fn get_repo_id(
 async fn get_repo_releases(
     repo_id: &RepoId,
     pool: &Pool<Postgres>,
-) -> Result<Vec<FlakeRelease>, sqlx::Error> {
+) -> Result<Vec<FlakeRelease>, AppError> {
     let query = format!(
         "SELECT release.id AS id, \
             githubowner.name AS owner, \
@@ -164,7 +165,8 @@ async fn get_repo_releases(
     let releases: Vec<FlakeRelease> = sqlx::query_as(&query)
         .bind(&repo_id.0)
         .fetch_all(pool)
-        .await?;
+        .await
+        .context("Failed to fetch repo releases from database")?;
 
     Ok(releases)
 }
