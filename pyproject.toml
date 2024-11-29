@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-fastapi = "^0.103.1"
+fastapi = "^0.109.1"
 fastapi-oidc = "^0.0.9"
 anybadge = "1.14.0"
 opentelemetry-instrumentation-fastapi = "^0.40b0"
